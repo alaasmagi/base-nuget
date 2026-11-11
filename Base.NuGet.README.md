@@ -355,7 +355,7 @@ Developed and maintained by Aleksander Laasmägi.
 - GitHub profile: [alaasmagi](https://github.com/alaasmagi)
 - LinkedIn profile: [alaasmagi](https://www.linkedin.com/in/alaasmagi/)
 - Email: [aleksander.laasmagi@gmail.com](mailto:aleksander.laasmagi@gmail.com)
-- Repository: [alaasmagi-base-nuget](https://github.com/alaasmagi/alaasmagi-base-nuget)
+- Repository: [base-nuget](https://github.com/alaasmagi/base-nuget)
 
 
 ## Platform notification contract
