@@ -27,7 +27,7 @@ public static class KeycloakOidcExtensions
             services.AddOpenIdConnectAccessTokenManagement();
         }
 
-        return services.AddAuthentication(auth =>
+        var builder = services.AddAuthentication(auth =>
             {
                 auth.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
                 auth.DefaultChallengeScheme = OpenIdConnectDefaults.AuthenticationScheme;
@@ -85,5 +85,15 @@ public static class KeycloakOidcExtensions
                     oidc.TokenValidationParameters.RoleClaimType = options.RoleClaimType;
                 }
             });
+
+        if (options.MapPermissions)
+        {
+            // Registered after AddCookie so it runs after the cookie defaults and application cookie configuration,
+            // chaining any existing OnValidatePrincipal handler and wrapping the final ticket data format.
+            services.AddOptions<CookieAuthenticationOptions>(CookieAuthenticationDefaults.AuthenticationScheme)
+                .PostConfigure(cookie => KeycloakOidcPermissionEvents.Configure(cookie, options));
+        }
+
+        return builder;
     }
 }

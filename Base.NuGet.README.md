@@ -211,7 +211,7 @@ Provides:
 - Keycloak JWT bearer authentication registration
 - Keycloak OpenID Connect authentication registration (configurable scopes, cookie paths, claim types and PAR), and JWT bearer as an extra scheme next to it
 - Keycloak role claim transformation
-- Keycloak permission claim transformation (`KeycloakOptions.MapPermissions`): `resource_access.{own clientId}.roles` values containing a dot become `permission` claims
+- Keycloak permission mapping (`KeycloakOptions.MapPermissions`) for JWT bearer and OpenID Connect: `resource_access.{own clientId}.roles` values containing a dot become `permission` claims; in OIDC mode they come from the stored access token and are refreshed with it
 - contract token validation: JWKS signature, exact issuer, audience (`Audience`, falling back to `ClientId`), lifetime with `ClockSkew` (default 30 seconds)
 - Keycloak admin API options and a typed `IKeycloakAdminClient` implementation
 - `KeycloakUser` and `KeycloakRole` admin models
@@ -320,7 +320,7 @@ All packages in this repository currently target:
 
 All package projects currently declare:
 
-- version `1.6.0`
+- version `1.6.1`
 
 Relevant package dependencies used across the set include:
 

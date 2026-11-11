@@ -1,5 +1,4 @@
 using System.Security.Claims;
-using System.Text.Json;
 using Base.Authorization;
 using Microsoft.AspNetCore.Authentication;
 
@@ -28,7 +27,7 @@ public class KeycloakPermissionClaimsTransformation : IClaimsTransformation
     /// is set.</param>
     public KeycloakPermissionClaimsTransformation(KeycloakOptions options)
     {
-        _clientId = string.IsNullOrEmpty(options.ClientId) ? options.Audience : options.ClientId;
+        _clientId = KeycloakPermissionReader.ResolveClientId(options);
     }
 
     /// <summary>
@@ -62,7 +61,7 @@ public class KeycloakPermissionClaimsTransformation : IClaimsTransformation
             return Task.FromResult(principal);
         }
 
-        foreach (var permission in ReadPermissions(resourceAccessClaim.Value, _clientId))
+        foreach (var permission in KeycloakPermissionReader.Read(resourceAccessClaim.Value, _clientId))
         {
             if (!primaryIdentity.HasClaim(PermissionClaimTypes.Permission, permission))
             {
@@ -72,36 +71,5 @@ public class KeycloakPermissionClaimsTransformation : IClaimsTransformation
         }
 
         return Task.FromResult(principal);
-    }
-
-    private static List<string> ReadPermissions(string json, string clientId)
-    {
-        var permissions = new List<string>();
-        try
-        {
-            using var doc = JsonDocument.Parse(json);
-            if (doc.RootElement.ValueKind != JsonValueKind.Object
-                || !doc.RootElement.TryGetProperty(clientId, out var clientElement)
-                || clientElement.ValueKind != JsonValueKind.Object
-                || !clientElement.TryGetProperty("roles", out var rolesElement)
-                || rolesElement.ValueKind != JsonValueKind.Array)
-            {
-                return permissions;
-            }
-
-            foreach (var role in rolesElement.EnumerateArray())
-            {
-                if (role.ValueKind == JsonValueKind.String && role.GetString() is { } value && value.Contains('.'))
-                {
-                    permissions.Add(value);
-                }
-            }
-        }
-        catch (JsonException)
-        {
-            permissions.Clear();
-        }
-
-        return permissions;
     }
 }

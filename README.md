@@ -42,7 +42,7 @@ The repository currently contains these NuGet packages:
 - `alaasmagi.Base.Contracts.Authorization`
 - `alaasmagi.Base.Authorization`
 
-All projects currently target `.NET 10.0` and declare version `1.6.0`.
+All projects currently target `.NET 10.0` and declare version `1.6.1`.
 
 ## What Each Package Does
 
@@ -87,7 +87,7 @@ All projects currently target `.NET 10.0` and declare version `1.6.0`.
 
 - `Base.Keycloak` provides JWT bearer and OpenID Connect registration helpers for Keycloak, configurable through `KeycloakOptions` and combinable in one host.
 - `Base.Keycloak` also provides role claim transformation, admin API models/client helpers, and identity lifecycle/action event payloads.
-- With `KeycloakOptions.MapPermissions`, `KeycloakPermissionClaimsTransformation` turns `resource_access.{clientId}.roles` values containing a dot into `permission` claims for `Base.Authorization`.
+- `KeycloakOptions.MapPermissions` maps `resource_access.{clientId}.roles` values containing a dot to `permission` claims for `Base.Authorization`, for both `AddKeycloakJwtBearer` and `AddKeycloakOidc`.
 - JWT bearer validates the JWKS signature, the exact issuer from the authority metadata, the audience (`Audience`, falling back to `ClientId`), and token lifetime with `ClockSkew` (default 30 seconds).
 
 ### Authorization
@@ -233,6 +233,34 @@ public class CoursesController(ICurrentUser currentUser) : ControllerBase
 - Service tokens (client credentials) have `IsService == true` and `ClientId` set; their permissions come from
   the service account's client roles in the same way.
 - Use `[Authorize]` for endpoints that only need a signed-in caller and `[AllowAnonymous]` for public ones.
+
+### MapPermissions with JWT bearer and OpenID Connect
+
+`MapPermissions = true` works with both registrations:
+
+- **JWT bearer (`AddKeycloakJwtBearer`)**: permissions are read from the validated bearer access token on every
+  request.
+- **OpenID Connect + cookie (`AddKeycloakOidc`)**: permissions come from the access token stored in the cookie
+  (`SaveTokens`), never from the ID token or userinfo, so MVC pages and APIs use the same source. Keycloak adds
+  `resource_access` only to the access token by default. The access token is refreshed through Duende access token
+  management when it expires within 30 seconds, and permissions are refreshed with it, so they are at most one
+  access token lifetime stale. A missing access token or a failed refresh signs the user out. Permission claims
+  apply to the current request only and are not stored in the cookie.
+
+```csharp
+builder.Services.AddKeycloakOidc(new KeycloakOptions
+{
+    Authority = "https://identity.alaasmagi.dev/realms/someRealm",
+    ClientId = "someApp-web",   // own clientId: key under resource_access in the access token
+    ClientSecret = "...",
+    MapPermissions = true
+});
+builder.Services.AddPermissionAuthorization();
+```
+
+Keep `UseAccessTokenManagement` enabled (the default) in OIDC mode. Without it the access token cannot be
+refreshed, and users are signed out when it expires. Existing `OnValidatePrincipal` cookie handlers are kept and
+run first. A cookie events type registered through `EventsType` is not chained.
 
 ## Notes
 
