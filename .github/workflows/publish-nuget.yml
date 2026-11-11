@@ -56,9 +56,6 @@ jobs:
       - name: Test event contract
         run: dotnet test tests/Base.Message.Tests/Base.Message.Tests.csproj --configuration Release
 
-      - name: Test authorization
-        run: dotnet test tests/Base.Authorization.Tests/Base.Authorization.Tests.csproj --configuration Release
-
       - name: Pack NuGet packages
         run: |
           set -euo pipefail

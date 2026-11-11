@@ -278,4 +278,3 @@ placeholders, not literal wire values. Use `contentVersion: "1.0"`.
 - Never log or persist notification content such as OTP codes or action links.
 
 Run contract tests with `dotnet test tests/Base.Message.Tests/Base.Message.Tests.csproj -c Release`.
-Run authorization tests with `dotnet test tests/Base.Authorization.Tests/Base.Authorization.Tests.csproj -c Release`.
