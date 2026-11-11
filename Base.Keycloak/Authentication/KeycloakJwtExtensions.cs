@@ -19,7 +19,7 @@ public static class KeycloakJwtExtensions
     public static AuthenticationBuilder AddKeycloakJwtBearer(this IServiceCollection services, KeycloakOptions options)
     {
         services.AddSingleton(options);
-        services.AddTransient<IClaimsTransformation, KeycloakRoleClaimsTransformation>();
+        services.AddKeycloakClaimsTransformation(options);
 
         return services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             .AddKeycloakJwtBearer(options);
@@ -36,15 +36,23 @@ public static class KeycloakJwtExtensions
     public static AuthenticationBuilder AddKeycloakJwtBearer(this AuthenticationBuilder builder, KeycloakOptions options)
     {
         builder.Services.TryAddSingleton(options);
-        builder.Services.TryAddTransient<IClaimsTransformation, KeycloakRoleClaimsTransformation>();
+        builder.Services.TryAdd(KeycloakClaimsTransformationDescriptor(options));
 
         return builder.AddJwtBearer(JwtBearerDefaults.AuthenticationScheme, jwtOptions =>
         {
             jwtOptions.Authority = options.Authority;
-            jwtOptions.Audience = options.Audience;
+            jwtOptions.Audience = string.IsNullOrEmpty(options.Audience) ? options.ClientId : options.Audience;
             jwtOptions.RequireHttpsMetadata = options.RequireHttpsMetadata;
             jwtOptions.MapInboundClaims = options.MapInboundClaims;
             jwtOptions.TokenValidationParameters.ValidateAudience = options.ValidateAudience;
+
+            // Platform token contract: JWKS signature, exact issuer from the authority metadata, and lifetime.
+            jwtOptions.TokenValidationParameters.ValidateIssuer = true;
+            jwtOptions.TokenValidationParameters.ValidateIssuerSigningKey = true;
+            jwtOptions.TokenValidationParameters.RequireSignedTokens = true;
+            jwtOptions.TokenValidationParameters.ValidateLifetime = true;
+            jwtOptions.TokenValidationParameters.RequireExpirationTime = true;
+            jwtOptions.TokenValidationParameters.ClockSkew = options.ClockSkew;
 
             if (options.NameClaimType != null)
             {
@@ -56,5 +64,17 @@ public static class KeycloakJwtExtensions
                 jwtOptions.TokenValidationParameters.RoleClaimType = options.RoleClaimType;
             }
         });
+    }
+
+    internal static void AddKeycloakClaimsTransformation(this IServiceCollection services, KeycloakOptions options)
+    {
+        services.Add(KeycloakClaimsTransformationDescriptor(options));
+    }
+
+    private static ServiceDescriptor KeycloakClaimsTransformationDescriptor(KeycloakOptions options)
+    {
+        return options.MapPermissions
+            ? ServiceDescriptor.Transient<IClaimsTransformation, KeycloakPermissionClaimsTransformation>()
+            : ServiceDescriptor.Transient<IClaimsTransformation, KeycloakRoleClaimsTransformation>();
     }
 }

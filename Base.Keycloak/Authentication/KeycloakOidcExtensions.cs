@@ -20,7 +20,7 @@ public static class KeycloakOidcExtensions
     public static AuthenticationBuilder AddKeycloakOidc(this IServiceCollection services, KeycloakOptions options)
     {
         services.AddSingleton(options);
-        services.AddTransient<IClaimsTransformation, KeycloakRoleClaimsTransformation>();
+        services.AddKeycloakClaimsTransformation(options);
 
         if (options.UseAccessTokenManagement)
         {

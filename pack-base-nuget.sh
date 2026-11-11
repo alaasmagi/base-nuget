@@ -20,6 +20,8 @@ projects=(
   "Base.Cache/Base.Cache.csproj"
   "Base.Contracts.Message/Base.Contracts.Message.csproj"
   "Base.Domain.Identity/Base.Domain.Identity.csproj"
+  "Base.Contracts.Authorization/Base.Contracts.Authorization.csproj"
+  "Base.Authorization/Base.Authorization.csproj"
   "Base.Keycloak/Base.Keycloak.csproj"
   "Base.Message/Base.Message.csproj"
   "Base.Message.RabbitMQ/Base.Message.RabbitMQ.csproj"

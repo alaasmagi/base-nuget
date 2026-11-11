@@ -21,6 +21,8 @@ This package set provides shared contracts and generic implementations for commo
 - `alaasmagi.Base.Message`
 - `alaasmagi.Base.Message.RabbitMQ`
 - `alaasmagi.Base.Keycloak`
+- `alaasmagi.Base.Contracts.Authorization`
+- `alaasmagi.Base.Authorization`
 
 ## Included Capabilities
 
@@ -39,6 +41,7 @@ These packages cover the common building blocks used across layered applications
 - event-envelope, publisher, and handler contracts
 - RabbitMQ event publishing and listener infrastructure
 - Keycloak authentication helpers, admin API models, and identity event payloads
+- permission-based authorization with deny-by-default endpoints
 
 ## Package Overview
 
@@ -208,6 +211,8 @@ Provides:
 - Keycloak JWT bearer authentication registration
 - Keycloak OpenID Connect authentication registration (configurable scopes, cookie paths, claim types and PAR), and JWT bearer as an extra scheme next to it
 - Keycloak role claim transformation
+- Keycloak permission claim transformation (`KeycloakOptions.MapPermissions`): `resource_access.{own clientId}.roles` values containing a dot become `permission` claims
+- contract token validation: JWKS signature, exact issuer, audience (`Audience`, falling back to `ClientId`), lifetime with `ClockSkew` (default 30 seconds)
 - Keycloak admin API options and a typed `IKeycloakAdminClient` implementation
 - `KeycloakUser` and `KeycloakRole` admin models
 - identity event content payloads matching the message schema:
@@ -215,6 +220,24 @@ Provides:
   - `VerifyEmailContent` (`user-verify`)
   - `OtpEmailContent` (`user-2fa-otp`)
   - `PasswordResetContent` (`user-password-reset`)
+
+### `alaasmagi.Base.Contracts.Authorization`
+
+Defines:
+
+- `ICurrentUser` (`IsAuthenticated`, `Id` from `sub`, `Email`, `Name`, `IsService`, `ClientId`, `Permissions`, `HasPermission`)
+
+### `alaasmagi.Base.Authorization`
+
+Provides (reads `permission` claims only; no Keycloak dependency):
+
+- `Actions` (`View`, `ViewAll`, `Create`, `Edit`, `Delete`), extensible by apps
+- `RequirePermissionAttribute` (`[RequirePermission("courses", Actions.Create)]` or `[RequirePermission("courses.create")]`)
+- `PermissionPolicyProvider` for `perm:{module}.{action}` policies
+- `RequirePermission(module, action)` for minimal API endpoints and groups
+- `CurrentUser`, registered as scoped `ICurrentUser`
+- `AddPermissionAuthorization(options => ...)` with a deny-by-default fallback policy and optional
+  `ValidateEndpointsOnStartup`
 
 ## Typical Usage
 
@@ -297,7 +320,7 @@ All packages in this repository currently target:
 
 All package projects currently declare:
 
-- version `1.5.0`
+- version `1.6.0`
 
 Relevant package dependencies used across the set include:
 
@@ -323,6 +346,7 @@ Relevant package dependencies used across the set include:
 - Cache packages provide string-keyed, typed value abstractions that can be backed by Redis or another key-value cache store.
 - Message packages use the platform event envelope (`id`, `source`, `tenant`, `action`, `timestamp`, `contentVersion`, `content`); commands additionally include `expiresAt`. Routing segments must be non-empty and contain no dots.
 - Keycloak helpers cover authentication registration, role claim transformation, admin user operations, and identity email/lifecycle event payloads.
+- Authorization helpers check permissions only, never roles. Endpoints without `RequirePermission`, `[Authorize]`, or `[AllowAnonymous]` are denied.
 
 ## Developer
 

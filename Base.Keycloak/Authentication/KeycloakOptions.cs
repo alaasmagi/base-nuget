@@ -11,7 +11,8 @@ public class KeycloakOptions
     public required string Authority { get; init; }
 
     /// <summary>
-    /// Gets the expected JWT audience.
+    /// Gets the expected JWT audience, normally the backend's own client identifier. When <c>null</c>, JWT bearer
+    /// falls back to <see cref="ClientId"/>.
     /// </summary>
     public string? Audience { get; init; }
 
@@ -89,4 +90,17 @@ public class KeycloakOptions
     /// refresh. Defaults to <c>true</c>.
     /// </summary>
     public bool UseAccessTokenManagement { get; init; } = true;
+
+    /// <summary>
+    /// Gets a value indicating whether <see cref="KeycloakPermissionClaimsTransformation"/> replaces
+    /// <see cref="KeycloakRoleClaimsTransformation"/>, so the principal carries <c>permission</c> claims for the
+    /// backend's own client instead of role claims. Defaults to <c>false</c>.
+    /// </summary>
+    public bool MapPermissions { get; init; }
+
+    /// <summary>
+    /// Gets the clock skew JWT bearer allows when validating token lifetime. Defaults to 30 seconds, the maximum
+    /// the platform token contract permits.
+    /// </summary>
+    public TimeSpan ClockSkew { get; init; } = TimeSpan.FromSeconds(30);
 }

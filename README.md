@@ -16,6 +16,7 @@ This repository contains the source for the `alaasmagi.Base.*` package set. The 
 - event messaging contracts and helpers
 - RabbitMQ event transport support
 - Keycloak authentication, admin API models, and identity event payloads
+- permission-based authorization for Keycloak-secured APIs
 
 ## Packages
 
@@ -38,8 +39,10 @@ The repository currently contains these NuGet packages:
 - `alaasmagi.Base.Message`
 - `alaasmagi.Base.Message.RabbitMQ`
 - `alaasmagi.Base.Keycloak`
+- `alaasmagi.Base.Contracts.Authorization`
+- `alaasmagi.Base.Authorization`
 
-All projects currently target `.NET 10.0` and declare version `1.5.0`.
+All projects currently target `.NET 10.0` and declare version `1.6.0`.
 
 ## What Each Package Does
 
@@ -84,6 +87,13 @@ All projects currently target `.NET 10.0` and declare version `1.5.0`.
 
 - `Base.Keycloak` provides JWT bearer and OpenID Connect registration helpers for Keycloak, configurable through `KeycloakOptions` and combinable in one host.
 - `Base.Keycloak` also provides role claim transformation, admin API models/client helpers, and identity lifecycle/action event payloads.
+- With `KeycloakOptions.MapPermissions`, `KeycloakPermissionClaimsTransformation` turns `resource_access.{clientId}.roles` values containing a dot into `permission` claims for `Base.Authorization`.
+- JWT bearer validates the JWKS signature, the exact issuer from the authority metadata, the audience (`Audience`, falling back to `ClientId`), and token lifetime with `ClockSkew` (default 30 seconds).
+
+### Authorization
+
+- `Base.Contracts.Authorization` defines `ICurrentUser` (`IsAuthenticated`, `Id` from `sub`, display-only `Email`/`Name`, `IsService`, `ClientId`, `Permissions`, `HasPermission`).
+- `Base.Authorization` provides `Actions`, `RequirePermissionAttribute`, `PermissionPolicyProvider` (`perm:{module}.{action}` policies), the minimal API `RequirePermission(...)` extension, `CurrentUser`, and `AddPermissionAuthorization(...)` with a deny-by-default fallback policy. It only reads `permission` claims and does not depend on Keycloak.
 
 ## Typical Flow
 
@@ -159,6 +169,71 @@ public class TodoRepository
 }
 ```
 
+## Permission authorization
+
+Permissions are Keycloak client roles named `{module}.{action}` on the backend's own client. Code checks
+permissions only, never roles. Endpoints without authorization metadata are denied.
+
+```csharp
+using Base.Authorization;
+using Base.Contracts.Authorization;
+using Base.Keycloak.Authentication;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+
+// Registration (Program.cs)
+builder.Services.AddKeycloakJwtBearer(new KeycloakOptions
+{
+    Authority = "https://identity.alaasmagi.dev/realms/someRealm",
+    Audience = "someApp-api",   // own clientId: required in "aud", key under resource_access
+    MapPermissions = true       // resource_access.someApp-api.roles -> "permission" claims
+});
+builder.Services.AddPermissionAuthorization(options => options.ValidateEndpointsOnStartup = true);
+
+var app = builder.Build();
+app.UseAuthentication();
+app.UseAuthorization();
+
+// Minimal API
+app.MapDelete("/api/courses/{id:guid}", (Guid id, ICurrentUser user) => Results.NoContent())
+    .RequirePermission("courses", Actions.Delete);
+
+// App-specific actions; the standard constants stay available as Actions.Create etc.
+public sealed class AppActions : Actions
+{
+    public const string Mark = "mark";
+}
+
+// Controller
+[ApiController]
+[Route("api/courses")]
+public class CoursesController(ICurrentUser currentUser) : ControllerBase
+{
+    [HttpGet]
+    [RequirePermission("courses", Actions.View)]
+    public IActionResult List() => currentUser.HasPermission("courses", Actions.ViewAll)
+        ? Ok("all courses")
+        : Ok($"courses of {currentUser.Id}");
+
+    [HttpPost("{id:guid}/grades")]
+    [RequirePermission("grades", AppActions.Mark)]
+    public IActionResult Mark(Guid id) => NoContent();
+
+    [HttpGet("catalog")]
+    [AllowAnonymous]
+    public IActionResult Catalog() => currentUser.IsAuthenticated
+        ? Ok($"catalog for {currentUser.Id}")
+        : Ok("public catalog");
+}
+```
+
+- `ICurrentUser.Id` is the token `sub` and is the only user identifier; `Email` and `Name` are display-only.
+- `Id` throws `InvalidOperationException` when there is no valid `sub`. On `[AllowAnonymous]` endpoints check
+  `IsAuthenticated` before reading `Id`.
+- Service tokens (client credentials) have `IsService == true` and `ClientId` set; their permissions come from
+  the service account's client roles in the same way.
+- Use `[Authorize]` for endpoints that only need a signed-in caller and `[AllowAnonymous]` for public ones.
+
 ## Notes
 
 - Package versions should be kept aligned across the full `alaasmagi.Base.*` set.
@@ -169,6 +244,7 @@ public class TodoRepository
 - Cache packages define a provider-neutral abstraction; concrete Redis or other store implementations can inherit from `BaseCache`.
 - Messaging packages provide contracts and reusable RabbitMQ infrastructure for topic-based event workflows.
 - Keycloak helpers are intended for ASP.NET Core applications that need Keycloak authentication, role claims, admin user operations, or identity event payloads.
+- Authorization packages check `permission` claims only. `AddPermissionAuthorization` does not configure authentication schemes.
 
 
 ## Platform notification contract
@@ -202,3 +278,4 @@ placeholders, not literal wire values. Use `contentVersion: "1.0"`.
 - Never log or persist notification content such as OTP codes or action links.
 
 Run contract tests with `dotnet test tests/Base.Message.Tests/Base.Message.Tests.csproj -c Release`.
+Run authorization tests with `dotnet test tests/Base.Authorization.Tests/Base.Authorization.Tests.csproj -c Release`.
