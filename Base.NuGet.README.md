@@ -360,7 +360,7 @@ Developed and maintained by Aleksander Laasmägi.
 
 ## Platform notification contract
 
-The authoritative examples are in `docs/contracts/event-contract.json`. Values in square brackets are
+The authoritative examples are in `docs/contracts/event-contract.md`. Values in square brackets are
 placeholders, not literal wire values. Use `contentVersion: "1.0"`.
 
 - Publish domain events to `identity-hub.events` and notification commands to
