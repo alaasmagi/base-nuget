@@ -42,7 +42,7 @@ The repository currently contains these NuGet packages:
 - `alaasmagi.Base.Contracts.Authorization`
 - `alaasmagi.Base.Authorization`
 
-All projects currently target `.NET 10.0` and declare version `1.6.1`.
+All projects currently target `.NET 10.0` and declare version `1.7.0`.
 
 ## What Each Package Does
 
@@ -81,7 +81,7 @@ All projects currently target `.NET 10.0` and declare version `1.6.1`.
 
 - `Base.Contracts.Message` defines event-envelope, publisher, and handler contracts.
 - `Base.Message` provides base event envelopes, default source names, routing-key validation, notification recipient content, and command expiry support.
-- `Base.Message.RabbitMQ` provides RabbitMQ options, connection management, event publishing, listener base support, and publisher registration helpers.
+- `Base.Message.RabbitMQ` provides RabbitMQ options, connection management, event publishing, listener base support, a routing consumer that dispatches one queue's messages by source/action, and publisher registration helpers.
 
 ### Keycloak
 

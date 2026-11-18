@@ -202,6 +202,7 @@ Provides:
 - `RabbitMqEventPublisher`
 - `RabbitMqConsumerBase<TContent>`
 - `RabbitMqDeliveryConsumerBase` (raw delivery with routing key; the handler decides ack, requeue or reject)
+- `RabbitMqRoutingConsumer` and `RabbitMqEventRouter` (one queue per service: routes each message by routing-key source/action to a typed `IBaseEventHandler<TContent>`, registered with `AddRabbitMqRoutingConsumer`)
 - RabbitMQ publisher and consumer dependency injection helpers
 
 ### `alaasmagi.Base.Keycloak`
@@ -320,7 +321,7 @@ All packages in this repository currently target:
 
 All package projects currently declare:
 
-- version `1.6.1`
+- version `1.7.0`
 
 Relevant package dependencies used across the set include:
 

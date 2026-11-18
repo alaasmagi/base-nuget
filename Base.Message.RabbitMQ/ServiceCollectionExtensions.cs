@@ -1,6 +1,7 @@
 using Base.Contracts.Message;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace Base.Message.RabbitMQ;
 
@@ -50,6 +51,37 @@ public static class ServiceCollectionExtensions
     {
         services.TryAddRabbitMqConnectionManager();
         services.AddHostedService<TConsumer>();
+        return services;
+    }
+
+    /// <summary>
+    /// Registers a hosted <see cref="RabbitMqRoutingConsumer"/> that reads every message from one pre-existing queue and
+    /// dispatches it by routing key. Requires <see cref="AddRabbitMq"/> or <see cref="AddRabbitMqPublisher"/> to have
+    /// registered the connection and options, and an <see cref="IBaseEventHandler{TContent}"/> for every routed type.
+    /// </summary>
+    /// <param name="services">The service collection to register the consumer with.</param>
+    /// <param name="queueName">The pre-existing queue to consume from.</param>
+    /// <param name="configureRoutes">Adds the routes, e.g. <c>routes =&gt; routes.Route&lt;UserEventContent&gt;("identity-hub")</c>.</param>
+    /// <returns>The same service collection so additional calls can be chained.</returns>
+    public static IServiceCollection AddRabbitMqRoutingConsumer(
+        this IServiceCollection services,
+        string queueName,
+        Action<RabbitMqEventRouter> configureRoutes)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(queueName);
+        ArgumentNullException.ThrowIfNull(configureRoutes);
+
+        var router = new RabbitMqEventRouter();
+        configureRoutes(router);
+
+        services.TryAddRabbitMqConnectionManager();
+        // Not AddHostedService: it de-duplicates by implementation type, which would drop a second queue's consumer.
+        services.AddSingleton<IHostedService>(provider => new RabbitMqRoutingConsumer(
+            provider.GetRequiredService<RabbitMqConnectionManager>(),
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            router,
+            provider.GetRequiredService<ILogger<RabbitMqRoutingConsumer>>(),
+            queueName));
         return services;
     }
 
