@@ -12,6 +12,5 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" PrivateAssets="all" />
     <ProjectReference Include="../../Base.Keycloak/Base.Keycloak.csproj" />
     <ProjectReference Include="../../Base.Message.RabbitMQ/Base.Message.RabbitMQ.csproj" />
-    <None Include="../../docs/contracts/event-contract.json" Link="event-contract.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

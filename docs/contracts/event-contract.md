@@ -1,6 +1,6 @@
 # Event contract
 
-Every message on the platform message bus (RabbitMQ) uses one envelope shape. This document is the source of truth for that shape, the routing key, and the messages published by the core hubs. `event-contract.json` contains the same examples in machine-readable form.
+Every message on the platform message bus (RabbitMQ) uses one envelope shape. This document is the source of truth for that shape, the routing key, and the messages published by the core hubs.
 
 Implementation: `BaseEventEnvelope<TContent>` (`Base.Message`), `IBaseEventEnvelope<TContent>` (`Base.Contracts.Message`).
 
@@ -170,4 +170,4 @@ Published by products (`source` = app slug), consumed by `notification-hub`. Con
 1. Pick an `action` (kebab-case, one segment) and start at `contentVersion` `1.0`.
 2. Content inherits `BaseNotificationContent` (implement `IExpiringNotificationContent` if it expires).
 3. Publish with `CreateCommand(...)`.
-4. Add the action and its content fields to this document and to `event-contract.json`.
+4. Add the action and its content fields to this document.

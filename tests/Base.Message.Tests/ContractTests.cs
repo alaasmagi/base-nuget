@@ -49,6 +49,15 @@ public class ContractTests
         Assert.Equal(Expiry, JsonSerializer.Deserialize<BaseEventEnvelope<object>>(json)!.ExpiresAt);
     }
 
+    // Content fields per action, from "Identity commands" in docs/contracts/event-contract.md.
+    private static readonly string[] NotificationFields = ["userId", "email", "fullName", "locale", "timeZone"];
+    private static readonly Dictionary<string, string[]> ContractFields = new()
+    {
+        ["user-verify"] = [.. NotificationFields, "actionLink", "expiresAt", "validForMinutes"],
+        ["user-2fa-otp"] = [.. NotificationFields, "otpCode", "expiresAt", "validForMinutes"],
+        ["user-password-reset"] = [.. NotificationFields, "actionLink", "expiresAt", "validForMinutes"],
+    };
+
     public static IEnumerable<object[]> Commands()
     {
         yield return new object[] { "user-verify", new VerifyEmailContent { UserId = UserId, Email = "user@example.com", FullName = "Test User", Locale = "et-EE", TimeZone = "Europe/Tallinn", ActionLink = "https://example.com/verify", ExpiresAt = Expiry, ValidForMinutes = 10 } };
@@ -72,9 +81,7 @@ public class ContractTests
         var json = JsonSerializer.Serialize(value);
         using var document = JsonDocument.Parse(json);
         var actual = document.RootElement.GetProperty("content");
-        using var contract = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "event-contract.json")));
-        var expected = contract.RootElement.EnumerateArray().Single(e => e.GetProperty("action").GetString() == action).GetProperty("content");
-        Assert.Equal(expected.EnumerateObject().Select(p => p.Name).Order(), actual.EnumerateObject().Select(p => p.Name).Order());
+        Assert.Equal(ContractFields[action].Order(), actual.EnumerateObject().Select(p => p.Name).Order());
         Assert.Equal(UserId, actual.GetProperty("userId").GetString());
         Assert.Equal("Europe/Tallinn", actual.GetProperty("timeZone").GetString());
         Assert.Equal(JsonValueKind.Number, actual.GetProperty("validForMinutes").ValueKind);
