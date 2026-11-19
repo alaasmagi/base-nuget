@@ -9,7 +9,8 @@ namespace Base.Message.RabbitMQ;
 /// <summary>
 /// Provides a hosted RabbitMQ listener that hands each raw delivery (routing key and body) to the subclass and
 /// lets it decide whether the message is acked, requeued or rejected. Use it when a consumer needs transport
-/// metadata or per-message requeue control; otherwise use <see cref="RabbitMqConsumerBase{TContent}"/>.
+/// metadata; use <see cref="RabbitMqDeliveryConsumerBase{TContent}"/> for typed envelopes with per-message
+/// requeue control, or <see cref="RabbitMqConsumerBase{TContent}"/> for ack-or-reject handling.
 /// </summary>
 public abstract class RabbitMqDeliveryConsumerBase : BackgroundService
 {
@@ -44,6 +45,13 @@ public abstract class RabbitMqDeliveryConsumerBase : BackgroundService
     /// unexpected failures are likely transient and processing is idempotent.
     /// </summary>
     protected virtual MessageDisposition ExceptionDisposition => MessageDisposition.Reject;
+
+    /// <summary>
+    /// Gets how long a <see cref="MessageDisposition.Requeue"/> delivery is held before it is nacked with requeue,
+    /// so that immediate redelivery does not use up the queue's <c>x-delivery-limit</c> during a short outage. The
+    /// delivery keeps its prefetch slot while waiting. Defaults to 5 seconds.
+    /// </summary>
+    protected virtual TimeSpan RequeueDelay => TimeSpan.FromSeconds(5);
 
     /// <summary>
     /// Processes one delivery and returns what the broker should be told about it.
@@ -88,7 +96,7 @@ public abstract class RabbitMqDeliveryConsumerBase : BackgroundService
         }
     }
 
-    private async Task OnReceivedAsync(IChannel channel, BasicDeliverEventArgs ea, CancellationToken stoppingToken)
+    internal async Task OnReceivedAsync(IChannel channel, BasicDeliverEventArgs ea, CancellationToken stoppingToken)
     {
         MessageDisposition disposition;
 
@@ -116,7 +124,17 @@ public abstract class RabbitMqDeliveryConsumerBase : BackgroundService
                 break;
 
             case MessageDisposition.Requeue:
-                await channel.BasicNackAsync(ea.DeliveryTag, multiple: false, requeue: true, stoppingToken);
+                try
+                {
+                    await Task.Delay(RequeueDelay, stoppingToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    // Shutting down: the unacked delivery returns to the queue when the channel closes.
+                    return;
+                }
+
+                await channel.BasicNackAsync(ea.DeliveryTag, multiple: false, requeue: true, CancellationToken.None);
                 break;
 
             default:

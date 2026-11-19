@@ -6,8 +6,9 @@ namespace Base.Message;
 
 /// <summary>
 /// Provides the base event envelope: a strongly typed content payload plus the fixed metadata every message
-/// on the platform shares. Commands additionally carry expiresAt. Event fields are
-/// <c>id, source, tenant, action, timestamp, contentVersion, content</c>.
+/// on the platform shares. Events and commands have exactly the fields
+/// <c>id, source, tenant, action, timestamp, contentVersion, content</c>, none of them ever null. Whether a message is
+/// an event or a command is decided by the exchange it is published on.
 /// </summary>
 /// <typeparam name="TContent">The content payload type carried by the event envelope.</typeparam>
 [JsonConverter(typeof(BaseEventEnvelopeJsonConverterFactory))]
@@ -26,7 +27,8 @@ public class BaseEventEnvelope<TContent> : IBaseEventEnvelope<TContent>
     public required string Source { get; init; }
 
     /// <summary>
-    /// Gets and/or initializes the subject the message concerns (the Keycloak realm name).
+    /// Gets and/or initializes the subject the message concerns (the Keycloak realm name, or the requesting
+    /// product's slug for ai-hub replies).
     /// </summary>
     [JsonPropertyName("tenant")]
     public required string Tenant { get; init; }
@@ -43,14 +45,6 @@ public class BaseEventEnvelope<TContent> : IBaseEventEnvelope<TContent>
     [JsonPropertyName("timestamp")]
     public required string Timestamp { get; init; }
 
-    /// <summary>Gets the command expiry; null means the command never expires.</summary>
-    [JsonPropertyName("expiresAt")]
-    public DateTimeOffset? ExpiresAt { get; init; }
-
-    /// <summary>Identifies commands with arbitrary content, including non-expiring commands.</summary>
-    [JsonIgnore]
-    public bool IsCommand { get; init; }
-
     /// <summary>
     /// Gets and/or initializes the content version supplied by the caller and passed through verbatim.
     /// </summary>
@@ -58,7 +52,8 @@ public class BaseEventEnvelope<TContent> : IBaseEventEnvelope<TContent>
     public required string ContentVersion { get; init; }
 
     /// <summary>
-    /// Gets and/or initializes the content payload associated with the event.
+    /// Gets and/or initializes the content payload associated with the event. Never <c>null</c>; use an empty object
+    /// when there is nothing to send.
     /// </summary>
     [JsonPropertyName("content")]
     public required TContent Content { get; init; }
@@ -66,7 +61,8 @@ public class BaseEventEnvelope<TContent> : IBaseEventEnvelope<TContent>
     /// <summary>
     /// Creates an envelope, stamping a fresh <see cref="Id"/> (a new UUID) and the current
     /// <see cref="Timestamp"/> (<see cref="DateTimeOffset.UtcNow"/> truncated to milliseconds, ISO-8601 with a
-    /// <c>Z</c> suffix). The <paramref name="contentVersion"/> is passed through verbatim.
+    /// <c>Z</c> suffix). The <paramref name="contentVersion"/> is passed through verbatim. Use it for events and
+    /// commands alike.
     /// </summary>
     public static BaseEventEnvelope<TContent> Create(
         string source,
@@ -82,24 +78,7 @@ public class BaseEventEnvelope<TContent> : IBaseEventEnvelope<TContent>
             Action = action,
             Timestamp = FormatTimestamp(DateTimeOffset.UtcNow),
             ContentVersion = contentVersion,
-            Content = content,
-            ExpiresAt = (content as IExpiringNotificationContent)?.ExpiresAt.ToUniversalTime()
-        };
-
-    /// <summary>Creates a command, including an explicit null expiry when it never expires.</summary>
-    public static BaseEventEnvelope<TContent> CreateCommand(
-        string source, string tenant, string action, string contentVersion,
-        TContent content, DateTimeOffset? expiresAt) => new()
-        {
-            Id = Guid.NewGuid().ToString(),
-            Source = source,
-            Tenant = tenant,
-            Action = action,
-            Timestamp = FormatTimestamp(DateTimeOffset.UtcNow),
-            ContentVersion = contentVersion,
-            Content = content,
-            ExpiresAt = expiresAt?.ToUniversalTime(),
-            IsCommand = true
+            Content = content
         };
 
     /// <summary>

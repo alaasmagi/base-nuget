@@ -200,8 +200,9 @@ Provides:
 - `RabbitMqOptions`
 - `RabbitMqConnectionManager`
 - `RabbitMqEventPublisher`
-- `RabbitMqConsumerBase<TContent>`
-- `RabbitMqDeliveryConsumerBase` (raw delivery with routing key; the handler decides ack, requeue or reject)
+- `RabbitMqConsumerBase<TContent>` (acks when the handler returns; invalid envelopes and handler failures are rejected without requeue)
+- `RabbitMqDeliveryConsumerBase<TContent>` (typed envelope; the subclass returns ack, requeue or reject per message; invalid envelopes are rejected)
+- `RabbitMqDeliveryConsumerBase` (raw delivery with routing key; the handler decides ack, requeue or reject; `Requeue` is nacked after the overridable `RequeueDelay`, default 5 seconds)
 - `RabbitMqRoutingConsumer` and `RabbitMqEventRouter` (one queue per service: routes each message by routing-key source/action to a typed `IBaseEventHandler<TContent>`, registered with `AddRabbitMqRoutingConsumer`)
 - RabbitMQ publisher and consumer dependency injection helpers
 
@@ -211,16 +212,16 @@ Provides:
 
 - Keycloak JWT bearer authentication registration
 - Keycloak OpenID Connect authentication registration (configurable scopes, cookie paths, claim types and PAR), and JWT bearer as an extra scheme next to it
-- Keycloak role claim transformation
-- Keycloak permission mapping (`KeycloakOptions.MapPermissions`) for JWT bearer and OpenID Connect: `resource_access.{own clientId}.roles` values containing a dot become `permission` claims; in OIDC mode they come from the stored access token and are refreshed with it
+- Keycloak permission mapping, always on for JWT bearer and OpenID Connect and the only claims transformation: `resource_access.{own clientId}.roles` values in `{module}.{action}` form (exactly one dot) become `permission` claims; role names and other clients' roles are ignored; in OIDC mode they come from the stored access token and are refreshed with it
+- raw claim names by default (`KeycloakOptions.MapInboundClaims = false`)
 - contract token validation: JWKS signature, exact issuer, audience (`Audience`, falling back to `ClientId`), lifetime with `ClockSkew` (default 30 seconds)
 - Keycloak admin API options and a typed `IKeycloakAdminClient` implementation
 - `KeycloakUser` and `KeycloakRole` admin models
 - identity event content payloads matching the message schema:
   - `UserEventContent` (`user-created`, `user-deleted`, `user-updated`, `user-enabled`, `user-disabled`)
-  - `VerifyEmailContent` (`user-verify`)
-  - `OtpEmailContent` (`user-2fa-otp`)
-  - `PasswordResetContent` (`user-password-reset`)
+  - `VerifyEmailContent` (`email-user-verify`)
+  - `OtpEmailContent` (`email-user-2fa-otp`)
+  - `PasswordResetContent` (`email-user-password-reset`)
 
 ### `alaasmagi.Base.Contracts.Authorization`
 
@@ -321,7 +322,7 @@ All packages in this repository currently target:
 
 All package projects currently declare:
 
-- version `1.7.0`
+- version `1.8.0`
 
 Relevant package dependencies used across the set include:
 
@@ -345,8 +346,8 @@ Relevant package dependencies used across the set include:
 - Metadata timestamps and actor fields are populated automatically by the EF repository base classes when supported by the entity type.
 - User-based scoping is applied automatically when the entity implements `IBaseEntityUserId<TActor>` and a non-default actor value is supplied.
 - Cache packages provide string-keyed, typed value abstractions that can be backed by Redis or another key-value cache store.
-- Message packages use the platform event envelope (`id`, `source`, `tenant`, `action`, `timestamp`, `contentVersion`, `content`); commands additionally include `expiresAt`. Routing segments must be non-empty and contain no dots.
-- Keycloak helpers cover authentication registration, role claim transformation, admin user operations, and identity email/lifecycle event payloads.
+- Message packages use the platform event envelope (`id`, `source`, `tenant`, `action`, `timestamp`, `contentVersion`, `content`) for events and commands alike; no field is ever null. Routing segments must be non-empty and contain no dots.
+- Keycloak helpers cover authentication registration, permission claim mapping, admin user operations, and identity email/lifecycle event payloads.
 - Authorization helpers check permissions only, never roles. Endpoints without `RequirePermission`, `[Authorize]`, or `[AllowAnonymous]` are denied.
 
 ## Developer
@@ -375,16 +376,18 @@ placeholders, not literal wire values. Use `contentVersion: "1.0"`.
   Publish one command per recipient. Event content does not inherit this base.
 - `Locale` and `TimeZone` retain nullable setters for source compatibility, but both must be populated
   for commands. The RabbitMQ publisher validates recipient metadata before contacting the broker.
-- `BaseEventEnvelope<T>.Create(...)` preserves the existing signature and copies expiry from
-  `IExpiringNotificationContent`, implemented by the three existing Keycloak command DTOs.
-  For other commands use `CreateCommand(source, tenant, action, "1.0", content, expiresAt)`.
-  Invoice expiry is null; lunch expiry is the end of today's latest offer, converted to UTC.
-- Events omit `expiresAt`; commands write it even when null. The envelope converter preserves this
-  distinction with default System.Text.Json settings and with null omission enabled. Missing expiry
-  deserializes as null. When constructing Keycloak envelopes directly, set envelope expiry to the
-  payload expiry; the publisher rejects mismatches. Broker TTL remains a separate transport option.
-- Existing `VerifyEmailContent`, `OtpEmailContent`, and `PasswordResetContent` names remain supported.
-  `UserEventContent` omits absent optional properties; use only `UserId` for `user-deleted`.
+- Events and commands share one envelope with exactly `id`, `source`, `tenant`, `action`, `timestamp`,
+  `contentVersion` and `content`. Create both with `BaseEventEnvelope<T>.Create(...)`; whether a message is
+  an event or a command is decided by the exchange it is published on. There is no envelope `expiresAt`.
+- No envelope field is ever `null`; `content` is an object (`{}` when there is nothing to send). The
+  envelope converter and the publisher reject a missing or `null` field, and consumers reject such a
+  message instead of handling it. Unknown fields are ignored.
+- `content.expiresAt` and `validForMinutes` are display data for notification emails. Content that shows
+  a validity time implements `IExpiringNotificationContent`. Broker TTL remains a separate transport option.
+- Keycloak commands are `email-user-verify` (`VerifyEmailContent`), `email-user-2fa-otp`
+  (`OtpEmailContent`) and `email-user-password-reset` (`PasswordResetContent`).
+  `UserEventContent` carries `userId`, `email`, `username`, `fullName`, `locale` and `timeZone`, and omits
+  absent optional properties; `user-deleted` carries only `userId`.
 - Send integer fields (`validForMinutes`, `fractions`) as JSON numbers, money as invariant decimal
   strings with a separate currency, dates as `yyyy-MM-dd`, and times of day as `HH:mm`.
 - Never log or persist notification content such as OTP codes or action links.

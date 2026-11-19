@@ -6,8 +6,8 @@ namespace Base.Keycloak.Authentication;
 
 /// <summary>
 /// Adds the permissions from <c>resource_access.{clientId}.roles</c> to the principal as
-/// <see cref="PermissionClaimTypes.Permission"/> claims. Only values containing a dot are permissions; role names
-/// and roles of other clients are ignored. <see cref="PermissionClaimTypes.Permission"/> claims from any other
+/// <see cref="PermissionClaimTypes.Permission"/> claims. Only <c>{module}.{action}</c> values with exactly one dot
+/// are permissions (<see cref="PermissionNames.IsValid"/>); role names and roles of other clients are ignored. <see cref="PermissionClaimTypes.Permission"/> claims from any other
 /// source are removed.
 /// </summary>
 public class KeycloakPermissionClaimsTransformation : IClaimsTransformation

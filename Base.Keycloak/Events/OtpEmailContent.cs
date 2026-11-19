@@ -4,7 +4,7 @@ using System.Text.Json.Serialization;
 namespace Base.Keycloak.Events;
 
 /// <summary>
-/// Represents the <c>content</c> payload of a Keycloak one-time password command (<c>user-2fa-otp</c>).
+/// Represents the <c>content</c> payload of a Keycloak one-time password command (<c>email-user-2fa-otp</c>).
 /// </summary>
 public class OtpEmailContent : BaseNotificationContent, IExpiringNotificationContent
 {

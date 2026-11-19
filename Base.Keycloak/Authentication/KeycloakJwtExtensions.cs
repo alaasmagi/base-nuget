@@ -11,7 +11,9 @@ namespace Base.Keycloak.Authentication;
 public static class KeycloakJwtExtensions
 {
     /// <summary>
-    /// Registers JWT bearer authentication configured for Keycloak as the default authentication scheme.
+    /// Registers JWT bearer authentication configured for Keycloak as the default authentication scheme, with
+    /// <see cref="KeycloakPermissionClaimsTransformation"/> mapping the backend's own client permissions to
+    /// <c>permission</c> claims.
     /// </summary>
     /// <param name="services">The service collection to register authentication with.</param>
     /// <param name="options">The Keycloak authentication settings.</param>
@@ -19,7 +21,7 @@ public static class KeycloakJwtExtensions
     public static AuthenticationBuilder AddKeycloakJwtBearer(this IServiceCollection services, KeycloakOptions options)
     {
         services.AddSingleton(options);
-        services.AddKeycloakClaimsTransformation(options);
+        services.AddKeycloakClaimsTransformation();
 
         return services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             .AddKeycloakJwtBearer(options);
@@ -36,7 +38,7 @@ public static class KeycloakJwtExtensions
     public static AuthenticationBuilder AddKeycloakJwtBearer(this AuthenticationBuilder builder, KeycloakOptions options)
     {
         builder.Services.TryAddSingleton(options);
-        builder.Services.TryAdd(KeycloakClaimsTransformationDescriptor(options));
+        builder.Services.TryAdd(KeycloakClaimsTransformationDescriptor());
 
         return builder.AddJwtBearer(JwtBearerDefaults.AuthenticationScheme, jwtOptions =>
         {
@@ -54,10 +56,7 @@ public static class KeycloakJwtExtensions
             jwtOptions.TokenValidationParameters.RequireExpirationTime = true;
             jwtOptions.TokenValidationParameters.ClockSkew = options.ClockSkew;
 
-            if (options.NameClaimType != null)
-            {
-                jwtOptions.TokenValidationParameters.NameClaimType = options.NameClaimType;
-            }
+            jwtOptions.TokenValidationParameters.NameClaimType = options.NameClaimType ?? KeycloakOptions.NameClaim;
 
             if (options.RoleClaimType != null)
             {
@@ -66,15 +65,13 @@ public static class KeycloakJwtExtensions
         });
     }
 
-    internal static void AddKeycloakClaimsTransformation(this IServiceCollection services, KeycloakOptions options)
+    internal static void AddKeycloakClaimsTransformation(this IServiceCollection services)
     {
-        services.Add(KeycloakClaimsTransformationDescriptor(options));
+        services.Add(KeycloakClaimsTransformationDescriptor());
     }
 
-    private static ServiceDescriptor KeycloakClaimsTransformationDescriptor(KeycloakOptions options)
+    private static ServiceDescriptor KeycloakClaimsTransformationDescriptor()
     {
-        return options.MapPermissions
-            ? ServiceDescriptor.Transient<IClaimsTransformation, KeycloakPermissionClaimsTransformation>()
-            : ServiceDescriptor.Transient<IClaimsTransformation, KeycloakRoleClaimsTransformation>();
+        return ServiceDescriptor.Transient<IClaimsTransformation, KeycloakPermissionClaimsTransformation>();
     }
 }

@@ -1,5 +1,3 @@
-using System.Text;
-using System.Text.Json;
 using Base.Contracts.Message;
 using Microsoft.Extensions.Logging;
 
@@ -7,10 +5,11 @@ namespace Base.Message.RabbitMQ;
 
 /// <summary>
 /// Provides a hosted RabbitMQ listener that consumes event envelopes with a strongly typed content payload from a queue.
-/// A message is acked once the handler returns and rejected without requeue if deserialization or the handler throws.
+/// A message is acked once the handler returns and rejected without requeue (dead-lettered) if deserialization or the
+/// handler throws. Use <see cref="RabbitMqDeliveryConsumerBase{TContent}"/> for per-message requeue control.
 /// </summary>
 /// <typeparam name="TContent">The content payload type carried by the consumed event envelopes.</typeparam>
-public abstract class RabbitMqConsumerBase<TContent> : RabbitMqDeliveryConsumerBase
+public abstract class RabbitMqConsumerBase<TContent> : RabbitMqDeliveryConsumerBase<TContent>
 {
     private readonly IBaseEventHandler<TContent> _handler;
 
@@ -30,20 +29,18 @@ public abstract class RabbitMqConsumerBase<TContent> : RabbitMqDeliveryConsumerB
     }
 
     /// <summary>
-    /// Deserializes the delivery into a <see cref="BaseEventEnvelope{TContent}"/> and passes it to the registered handler.
+    /// Always <see cref="MessageDisposition.Reject"/>: a failed message is dead-lettered, never requeued.
     /// </summary>
-    protected override async Task<MessageDisposition> HandleDeliveryAsync(
-        MessageDelivery delivery,
+    protected sealed override MessageDisposition ExceptionDisposition => MessageDisposition.Reject;
+
+    /// <summary>
+    /// Passes the envelope to the registered handler and acks once it returns.
+    /// </summary>
+    protected sealed override async Task<MessageDisposition> HandleAsync(
+        BaseEventEnvelope<TContent> envelope,
         CancellationToken cancellationToken)
     {
-        var json = Encoding.UTF8.GetString(delivery.Body.Span);
-        var @event = JsonSerializer.Deserialize<BaseEventEnvelope<TContent>>(json);
-
-        if (@event != null)
-        {
-            await _handler.HandleAsync(@event, cancellationToken);
-        }
-
+        await _handler.HandleAsync(envelope, cancellationToken);
         return MessageDisposition.Ack;
     }
 }

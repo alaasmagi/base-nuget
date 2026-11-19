@@ -42,7 +42,7 @@ The repository currently contains these NuGet packages:
 - `alaasmagi.Base.Contracts.Authorization`
 - `alaasmagi.Base.Authorization`
 
-All projects currently target `.NET 10.0` and declare version `1.7.0`.
+All projects currently target `.NET 10.0` and declare version `1.8.0`.
 
 ## What Each Package Does
 
@@ -82,12 +82,15 @@ All projects currently target `.NET 10.0` and declare version `1.7.0`.
 - `Base.Contracts.Message` defines event-envelope, publisher, and handler contracts.
 - `Base.Message` provides base event envelopes, default source names, routing-key validation, notification recipient content, and command expiry support.
 - `Base.Message.RabbitMQ` provides RabbitMQ options, connection management, event publishing, listener base support, a routing consumer that dispatches one queue's messages by source/action, and publisher registration helpers.
+- `RabbitMqConsumerBase<TContent>` acks when the handler returns and rejects without requeue when the envelope is invalid or the handler throws. `RabbitMqDeliveryConsumerBase<TContent>` deserializes the envelope and lets the subclass return `Ack`, `Requeue` or `Reject`; invalid envelopes are rejected before reaching it.
+- `RabbitMqDeliveryConsumerBase` waits `RequeueDelay` (default 5 seconds, override the protected virtual property per consumer) before nacking a `Requeue` delivery, so immediate redelivery does not use up the queue's `x-delivery-limit`. When the host stops during the wait, the delivery is left unacked and returns to the queue when the channel closes.
 
 ### Keycloak
 
 - `Base.Keycloak` provides JWT bearer and OpenID Connect registration helpers for Keycloak, configurable through `KeycloakOptions` and combinable in one host.
-- `Base.Keycloak` also provides role claim transformation, admin API models/client helpers, and identity lifecycle/action event payloads.
-- `KeycloakOptions.MapPermissions` maps `resource_access.{clientId}.roles` values containing a dot to `permission` claims for `Base.Authorization`, for both `AddKeycloakJwtBearer` and `AddKeycloakOidc`.
+- `Base.Keycloak` also provides admin API models/client helpers and identity lifecycle/action event payloads.
+- Permission mapping is always on and is the only claims transformation: `AddKeycloakJwtBearer` and `AddKeycloakOidc` map `resource_access.{own clientId}.roles` values in `{module}.{action}` form (exactly one dot, `PermissionNames.IsValid`) to `permission` claims for `Base.Authorization`. Role names, values with more than one dot, realm roles and other clients' roles are ignored; no role claims are added.
+- `KeycloakOptions.MapInboundClaims` defaults to `false`, so claims keep their raw names (`sub`, `email`, `name`, `client_id`) as the JWT contract requires.
 - JWT bearer validates the JWKS signature, the exact issuer from the authority metadata, the audience (`Audience`, falling back to `ClientId`), and token lifetime with `ClockSkew` (default 30 seconds).
 
 ### Authorization
@@ -185,8 +188,7 @@ using Microsoft.AspNetCore.Mvc;
 builder.Services.AddKeycloakJwtBearer(new KeycloakOptions
 {
     Authority = "https://identity.alaasmagi.dev/realms/someRealm",
-    Audience = "someApp-api",   // own clientId: required in "aud", key under resource_access
-    MapPermissions = true       // resource_access.someApp-api.roles -> "permission" claims
+    Audience = "someApp-api"    // own clientId: required in "aud"; resource_access.someApp-api.roles -> "permission" claims
 });
 builder.Services.AddPermissionAuthorization(options => options.ValidateEndpointsOnStartup = true);
 
@@ -234,9 +236,9 @@ public class CoursesController(ICurrentUser currentUser) : ControllerBase
   the service account's client roles in the same way.
 - Use `[Authorize]` for endpoints that only need a signed-in caller and `[AllowAnonymous]` for public ones.
 
-### MapPermissions with JWT bearer and OpenID Connect
+### Permission mapping with JWT bearer and OpenID Connect
 
-`MapPermissions = true` works with both registrations:
+Permissions are always mapped, with both registrations:
 
 - **JWT bearer (`AddKeycloakJwtBearer`)**: permissions are read from the validated bearer access token on every
   request.
@@ -252,8 +254,7 @@ builder.Services.AddKeycloakOidc(new KeycloakOptions
 {
     Authority = "https://identity.alaasmagi.dev/realms/someRealm",
     ClientId = "someApp-web",   // own clientId: key under resource_access in the access token
-    ClientSecret = "...",
-    MapPermissions = true
+    ClientSecret = "..."
 });
 builder.Services.AddPermissionAuthorization();
 ```
@@ -271,7 +272,7 @@ run first. A cookie events type registered through `EventsType` is not chained.
 - Soft-delete operations are available through the `SoftDelete` repository and service variants.
 - Cache packages define a provider-neutral abstraction; concrete Redis or other store implementations can inherit from `BaseCache`.
 - Messaging packages provide contracts and reusable RabbitMQ infrastructure for topic-based event workflows.
-- Keycloak helpers are intended for ASP.NET Core applications that need Keycloak authentication, role claims, admin user operations, or identity event payloads.
+- Keycloak helpers are intended for ASP.NET Core applications that need Keycloak authentication with permission claims, admin user operations, or identity event payloads.
 - Authorization packages check `permission` claims only. `AddPermissionAuthorization` does not configure authentication schemes.
 
 
@@ -291,16 +292,18 @@ placeholders, not literal wire values. Use `contentVersion: "1.0"`.
   Publish one command per recipient. Event content does not inherit this base.
 - `Locale` and `TimeZone` retain nullable setters for source compatibility, but both must be populated
   for commands. The RabbitMQ publisher validates recipient metadata before contacting the broker.
-- `BaseEventEnvelope<T>.Create(...)` preserves the existing signature and copies expiry from
-  `IExpiringNotificationContent`, implemented by the three existing Keycloak command DTOs.
-  For other commands use `CreateCommand(source, tenant, action, "1.0", content, expiresAt)`.
-  Invoice expiry is null; lunch expiry is the end of today's latest offer, converted to UTC.
-- Events omit `expiresAt`; commands write it even when null. The envelope converter preserves this
-  distinction with default System.Text.Json settings and with null omission enabled. Missing expiry
-  deserializes as null. When constructing Keycloak envelopes directly, set envelope expiry to the
-  payload expiry; the publisher rejects mismatches. Broker TTL remains a separate transport option.
-- Existing `VerifyEmailContent`, `OtpEmailContent`, and `PasswordResetContent` names remain supported.
-  `UserEventContent` omits absent optional properties; use only `UserId` for `user-deleted`.
+- Events and commands share one envelope with exactly `id`, `source`, `tenant`, `action`, `timestamp`,
+  `contentVersion` and `content`. Create both with `BaseEventEnvelope<T>.Create(...)`; whether a message is
+  an event or a command is decided by the exchange it is published on. There is no envelope `expiresAt`.
+- No envelope field is ever `null`; `content` is an object (`{}` when there is nothing to send). The
+  envelope converter and the publisher reject a missing or `null` field, and consumers reject such a
+  message instead of handling it. Unknown fields are ignored.
+- `content.expiresAt` and `validForMinutes` are display data for notification emails. Content that shows
+  a validity time implements `IExpiringNotificationContent`. Broker TTL remains a separate transport option.
+- Keycloak commands are `email-user-verify` (`VerifyEmailContent`), `email-user-2fa-otp`
+  (`OtpEmailContent`) and `email-user-password-reset` (`PasswordResetContent`).
+  `UserEventContent` carries `userId`, `email`, `username`, `fullName`, `locale` and `timeZone`, and omits
+  absent optional properties; `user-deleted` carries only `userId`.
 - Send integer fields (`validForMinutes`, `fractions`) as JSON numbers, money as invariant decimal
   strings with a separate currency, dates as `yyyy-MM-dd`, and times of day as `HH:mm`.
 - Never log or persist notification content such as OTP codes or action links.

@@ -3,7 +3,11 @@ using System.Text.Json.Serialization;
 
 namespace Base.Message;
 
-/// <summary>Preserves the wire distinction between events and commands with a null expiry.</summary>
+/// <summary>
+/// Reads and writes exactly the envelope fields of the platform event contract. Reading fails with
+/// <see cref="JsonException"/> when any envelope field is missing or <c>null</c>, or <c>content</c> is not an object;
+/// unknown fields are ignored. Writing fails the same way instead of putting a <c>null</c> field on the wire.
+/// </summary>
 public sealed class BaseEventEnvelopeJsonConverterFactory : JsonConverterFactory
 {
     public override bool CanConvert(Type typeToConvert) =>
@@ -20,21 +24,20 @@ public sealed class BaseEventEnvelopeJsonConverterFactory : JsonConverterFactory
         {
             using var document = JsonDocument.ParseValue(ref reader);
             var root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+                throw new JsonException("The envelope must be a JSON object.");
             string Required(string name) => root.TryGetProperty(name, out var value) &&
                 value.ValueKind == JsonValueKind.String ? value.GetString()! :
                 throw new JsonException($"Missing or invalid envelope field '{name}'.");
-            if (!root.TryGetProperty("content", out var content))
-                throw new JsonException("Missing envelope content.");
-            var hasExpiry = root.TryGetProperty("expiresAt", out var expiry);
+            if (!root.TryGetProperty("content", out var content) || content.ValueKind != JsonValueKind.Object)
+                throw new JsonException("Missing or invalid envelope field 'content'.");
             return new BaseEventEnvelope<TContent>
             {
                 Id = Required("id"), Source = Required("source"), Tenant = Required("tenant"),
                 Action = Required("action"), Timestamp = Required("timestamp"),
                 ContentVersion = Required("contentVersion"),
-                Content = content.Deserialize<TContent>(options)!,
-                ExpiresAt = hasExpiry && expiry.ValueKind != JsonValueKind.Null
-                    ? expiry.GetDateTimeOffset().ToUniversalTime() : null,
-                IsCommand = hasExpiry
+                Content = content.Deserialize<TContent>(options)
+                          ?? throw new JsonException("Missing or invalid envelope field 'content'.")
             };
         }
 
@@ -42,23 +45,18 @@ public sealed class BaseEventEnvelopeJsonConverterFactory : JsonConverterFactory
             JsonSerializerOptions options)
         {
             writer.WriteStartObject();
-            writer.WriteString("id", value.Id);
-            writer.WriteString("source", value.Source);
-            writer.WriteString("tenant", value.Tenant);
-            writer.WriteString("action", value.Action);
-            writer.WriteString("timestamp", value.Timestamp);
-            if (value.IsCommand || value.Content is BaseNotificationContent || value.ExpiresAt.HasValue ||
-                value.Action is "user-verify" or "user-2fa-otp" or "user-password-reset" or "invoice" or "lunch-recommendation")
-            {
-                if (value.ExpiresAt is { } expiry)
-                    writer.WriteString("expiresAt", expiry.UtcDateTime);
-                else
-                    writer.WriteNull("expiresAt");
-            }
-            writer.WriteString("contentVersion", value.ContentVersion);
+            writer.WriteString("id", NotNull(value.Id, "id"));
+            writer.WriteString("source", NotNull(value.Source, "source"));
+            writer.WriteString("tenant", NotNull(value.Tenant, "tenant"));
+            writer.WriteString("action", NotNull(value.Action, "action"));
+            writer.WriteString("timestamp", NotNull(value.Timestamp, "timestamp"));
+            writer.WriteString("contentVersion", NotNull(value.ContentVersion, "contentVersion"));
             writer.WritePropertyName("content");
-            JsonSerializer.Serialize(writer, value.Content, options);
+            JsonSerializer.Serialize(writer, NotNull(value.Content, "content"), options);
             writer.WriteEndObject();
         }
+
+        private static T NotNull<T>(T? value, string name) =>
+            value ?? throw new JsonException($"Envelope field '{name}' must not be null.");
     }
 }

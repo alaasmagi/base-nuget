@@ -16,11 +16,12 @@ public static class PermissionPolicyNames
     /// <param name="module">The permission module, for example <c>courses</c>.</param>
     /// <param name="action">The permission action, for example <see cref="Actions.Create"/>.</param>
     /// <returns>The policy name <c>perm:{module}.{action}</c>.</returns>
+    /// <exception cref="ArgumentException">The module or action is empty, or either contains a dot.</exception>
     public static string For(string module, string action)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(module);
         ArgumentException.ThrowIfNullOrWhiteSpace(action);
-        return $"{Prefix}{module}.{action}";
+        return For($"{module}.{action}");
     }
 
     /// <summary>
@@ -28,13 +29,15 @@ public static class PermissionPolicyNames
     /// </summary>
     /// <param name="permission">The permission, for example <c>courses.create</c>.</param>
     /// <returns>The policy name <c>perm:{permission}</c>.</returns>
-    /// <exception cref="ArgumentException">The permission is empty or does not contain a dot.</exception>
+    /// <exception cref="ArgumentException">The permission does not satisfy <see cref="PermissionNames.IsValid"/>:
+    /// exactly one dot with a non-empty module and action.</exception>
     public static string For(string permission)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(permission);
-        if (!permission.Contains('.'))
+        if (!PermissionNames.IsValid(permission))
         {
-            throw new ArgumentException("A permission must use the '{module}.{action}' format.", nameof(permission));
+            throw new ArgumentException("A permission must use the '{module}.{action}' format with exactly one dot.",
+                nameof(permission));
         }
 
         return Prefix + permission;

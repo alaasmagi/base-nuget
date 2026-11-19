@@ -4,7 +4,7 @@ using System.Text.Json.Serialization;
 namespace Base.Keycloak.Events;
 
 /// <summary>
-/// Represents the <c>content</c> payload of a Keycloak verify-email command (<c>user-verify</c>).
+/// Represents the <c>content</c> payload of a Keycloak verify-email command (<c>email-user-verify</c>).
 /// </summary>
 public class VerifyEmailContent : BaseNotificationContent, IExpiringNotificationContent
 {

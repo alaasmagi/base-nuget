@@ -85,6 +85,21 @@ public class RoutingConsumerTests
     }
 
     [Theory]
+    [InlineData("not json")]
+    [InlineData("null")]
+    [InlineData("""{"id":"x","source":"identity-hub","tenant":"invoice-service","action":"user-updated","timestamp":"t","contentVersion":"1.0","content":null}""")]
+    public async Task RejectsInvalidEnvelopeInsteadOfThrowing(string body)
+    {
+        Assert.Equal(MessageDisposition.Reject, await RouteAsync(new MessageDelivery
+        {
+            RoutingKey = "identity-hub.invoice-service.user-updated",
+            Body = System.Text.Encoding.UTF8.GetBytes(body)
+        }));
+
+        Assert.Empty(_users.Received);
+    }
+
+    [Theory]
     [InlineData("identity-hub.food-app.user-updated")]
     [InlineData("identity-hub.invoice-service.user-deleted")]
     public async Task RejectsEnvelopeThatDoesNotMatchRoutingKey(string routingKey)

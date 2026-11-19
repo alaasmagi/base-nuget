@@ -5,6 +5,8 @@ namespace Base.Keycloak.Authentication;
 /// </summary>
 public class KeycloakOptions
 {
+    internal const string NameClaim = "name";
+
     /// <summary>
     /// Gets the Keycloak authority URL.
     /// </summary>
@@ -32,11 +34,6 @@ public class KeycloakOptions
     public bool RequireHttpsMetadata { get; init; } = true;
 
     /// <summary>
-    /// Gets a value indicating whether client roles should be added as role claims.
-    /// </summary>
-    public bool IncludeClientRoles { get; init; } = true;
-
-    /// <summary>
     /// Gets the OpenID Connect scopes to request. When <c>null</c>, the framework defaults (<c>openid</c>,
     /// <c>profile</c>) plus <c>offline_access</c> are requested; otherwise exactly these scopes are requested.
     /// </summary>
@@ -58,21 +55,24 @@ public class KeycloakOptions
     public string? AccessDeniedPath { get; init; }
 
     /// <summary>
-    /// Gets the claim type used as the user's name. When <c>null</c>, OpenID Connect uses
-    /// <c>preferred_username</c> and JWT bearer keeps the framework default.
+    /// Gets the claim type used as the user's name (<c>User.Identity.Name</c>). When <c>null</c>, both JWT bearer
+    /// and OpenID Connect use the raw <c>name</c> claim (full name, display only), as the JWT contract requires;
+    /// <c>preferred_username</c> is not used.
     /// </summary>
     public string? NameClaimType { get; init; }
 
     /// <summary>
-    /// Gets the claim type used for role checks. When <c>null</c>, the framework default is used.
+    /// Gets the claim type used for role checks. When <c>null</c>, the framework default is used. Base.Keycloak
+    /// adds no role claims; authorization uses <c>permission</c> claims.
     /// </summary>
     public string? RoleClaimType { get; init; }
 
     /// <summary>
     /// Gets a value indicating whether inbound JWT claim types are mapped to their legacy
-    /// <c>ClaimTypes</c> equivalents. Defaults to <c>true</c> (the framework default).
+    /// <c>ClaimTypes</c> equivalents. Defaults to <c>false</c>: the platform token contract reads raw claim names
+    /// (<c>sub</c>, <c>email</c>, <c>name</c>, <c>client_id</c>).
     /// </summary>
-    public bool MapInboundClaims { get; init; } = true;
+    public bool MapInboundClaims { get; init; }
 
     /// <summary>
     /// Gets a value indicating whether pushed authorization requests (PAR) are disabled for OpenID Connect.
@@ -90,13 +90,6 @@ public class KeycloakOptions
     /// refresh. Defaults to <c>true</c>.
     /// </summary>
     public bool UseAccessTokenManagement { get; init; } = true;
-
-    /// <summary>
-    /// Gets a value indicating whether <see cref="KeycloakPermissionClaimsTransformation"/> replaces
-    /// <see cref="KeycloakRoleClaimsTransformation"/>, so the principal carries <c>permission</c> claims for the
-    /// backend's own client instead of role claims. Defaults to <c>false</c>.
-    /// </summary>
-    public bool MapPermissions { get; init; }
 
     /// <summary>
     /// Gets the clock skew JWT bearer allows when validating token lifetime. Defaults to 30 seconds, the maximum

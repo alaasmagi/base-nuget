@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Base.Authorization;
 
 namespace Base.Keycloak.Authentication;
 
@@ -17,8 +18,9 @@ internal static class KeycloakPermissionReader
     }
 
     /// <summary>
-    /// Returns the values of <c>resource_access.{clientId}.roles</c> that contain a dot. A malformed value yields
-    /// no permissions.
+    /// Returns the values of <c>resource_access.{clientId}.roles</c> that are permissions according to
+    /// <see cref="PermissionNames.IsValid"/>. Role names (no dot), values with more than one dot and roles of other
+    /// clients are ignored. A malformed value yields no permissions.
     /// </summary>
     internal static List<string> Read(string resourceAccessJson, string clientId)
     {
@@ -37,7 +39,8 @@ internal static class KeycloakPermissionReader
 
             foreach (var role in rolesElement.EnumerateArray())
             {
-                if (role.ValueKind == JsonValueKind.String && role.GetString() is { } value && value.Contains('.'))
+                if (role.ValueKind == JsonValueKind.String && role.GetString() is { } value
+                    && PermissionNames.IsValid(value))
                 {
                     permissions.Add(value);
                 }

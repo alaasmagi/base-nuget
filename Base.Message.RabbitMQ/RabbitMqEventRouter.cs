@@ -1,4 +1,3 @@
-using System.Text.Json;
 using Base.Contracts.Message;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -8,7 +7,7 @@ namespace Base.Message.RabbitMQ;
 /// <summary>
 /// Routes raw deliveries from one queue to typed <see cref="IBaseEventHandler{TContent}"/> handlers by the routing key's
 /// <c>source</c> (and optionally <c>action</c>) segment, so a service can read every message it receives from a single
-/// queue. A delivery whose envelope does not match its routing key, or that has no route, is rejected.
+/// queue. A delivery whose envelope is invalid or does not match its routing key, or that has no route, is rejected.
 /// </summary>
 public class RabbitMqEventRouter
 {
@@ -47,7 +46,8 @@ public class RabbitMqEventRouter
     /// <param name="services">The (scoped) service provider the handler is resolved from.</param>
     /// <param name="logger">The logger used for rejected deliveries.</param>
     /// <param name="cancellationToken">A token used to cancel the asynchronous operation.</param>
-    /// <returns><see cref="MessageDisposition.Ack"/> once handled, otherwise <see cref="MessageDisposition.Reject"/>.</returns>
+    /// <returns><see cref="MessageDisposition.Ack"/> once handled, otherwise <see cref="MessageDisposition.Reject"/>.
+    /// Exceptions thrown by the handler are not caught.</returns>
     public async Task<MessageDisposition> RouteAsync(
         MessageDelivery delivery,
         IServiceProvider services,
@@ -71,7 +71,8 @@ public class RabbitMqEventRouter
         if (!await dispatch(delivery, services, cancellationToken))
         {
             logger.LogWarning(
-                "Rejecting message whose envelope does not match routing key '{RoutingKey}'", delivery.RoutingKey);
+                "Rejecting message whose envelope is invalid or does not match routing key '{RoutingKey}'",
+                delivery.RoutingKey);
             return MessageDisposition.Reject;
         }
 
@@ -83,8 +84,8 @@ public class RabbitMqEventRouter
         IServiceProvider services,
         CancellationToken cancellationToken)
     {
-        var envelope = JsonSerializer.Deserialize<BaseEventEnvelope<TContent>>(delivery.Body.Span);
-        if (envelope == null || delivery.RoutingKey != $"{envelope.Source}.{envelope.Tenant}.{envelope.Action}")
+        if (!EnvelopeReader.TryRead<TContent>(delivery, out var envelope)
+            || delivery.RoutingKey != $"{envelope.Source}.{envelope.Tenant}.{envelope.Action}")
         {
             return false;
         }

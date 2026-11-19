@@ -12,7 +12,9 @@ namespace Base.Keycloak.Authentication;
 public static class KeycloakOidcExtensions
 {
     /// <summary>
-    /// Registers cookie and OpenID Connect authentication configured for Keycloak.
+    /// Registers cookie and OpenID Connect authentication configured for Keycloak. Permissions are mapped to
+    /// <c>permission</c> claims from the access token stored in the cookie (never from the ID token) and refreshed
+    /// with it.
     /// </summary>
     /// <param name="services">The service collection to register authentication with.</param>
     /// <param name="options">The Keycloak authentication settings.</param>
@@ -20,7 +22,7 @@ public static class KeycloakOidcExtensions
     public static AuthenticationBuilder AddKeycloakOidc(this IServiceCollection services, KeycloakOptions options)
     {
         services.AddSingleton(options);
-        services.AddKeycloakClaimsTransformation(options);
+        services.AddKeycloakClaimsTransformation();
 
         if (options.UseAccessTokenManagement)
         {
@@ -78,7 +80,7 @@ public static class KeycloakOidcExtensions
                     oidc.PushedAuthorizationBehavior = PushedAuthorizationBehavior.Disable;
                 }
 
-                oidc.TokenValidationParameters.NameClaimType = options.NameClaimType ?? "preferred_username";
+                oidc.TokenValidationParameters.NameClaimType = options.NameClaimType ?? KeycloakOptions.NameClaim;
 
                 if (options.RoleClaimType != null)
                 {
@@ -86,13 +88,10 @@ public static class KeycloakOidcExtensions
                 }
             });
 
-        if (options.MapPermissions)
-        {
-            // Registered after AddCookie so it runs after the cookie defaults and application cookie configuration,
-            // chaining any existing OnValidatePrincipal handler and wrapping the final ticket data format.
-            services.AddOptions<CookieAuthenticationOptions>(CookieAuthenticationDefaults.AuthenticationScheme)
-                .PostConfigure(cookie => KeycloakOidcPermissionEvents.Configure(cookie, options));
-        }
+        // Registered after AddCookie so it runs after the cookie defaults and application cookie configuration,
+        // chaining any existing OnValidatePrincipal handler and wrapping the final ticket data format.
+        services.AddOptions<CookieAuthenticationOptions>(CookieAuthenticationDefaults.AuthenticationScheme)
+            .PostConfigure(cookie => KeycloakOidcPermissionEvents.Configure(cookie, options));
 
         return builder;
     }

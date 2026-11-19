@@ -51,10 +51,11 @@ public class RabbitMqEventPublisher : IBaseEventPublisher, IAsyncDisposable
 
         // Throws ArgumentException on a malformed segment before we touch the broker.
         var routingKey = BaseRoutingKey.For(message);
+        if (message.Id is null || message.Timestamp is null || message.ContentVersion is null || message.Content is null)
+            throw new ArgumentException("Envelope fields must not be null; use an empty object for empty content.",
+                nameof(message));
         if (message.Content is BaseNotificationContent notification)
             notification.Validate();
-        if (message.Content is IExpiringNotificationContent expiring && message.ExpiresAt != expiring.ExpiresAt)
-            throw new ArgumentException("Command envelope and content expiry must match.", nameof(message));
 
         // A RabbitMQ channel is not thread-safe, so publishes are serialized on a single owned channel.
         await _publishLock.WaitAsync(cancellationToken);

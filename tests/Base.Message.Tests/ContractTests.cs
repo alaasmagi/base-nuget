@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using Base.Message;
 using Base.Keycloak.Events;
 using Xunit;
@@ -11,58 +10,77 @@ public class ContractTests
     private static BaseEventEnvelope<T> Envelope<T>(T content, string action = "user-created") =>
         BaseEventEnvelope<T>.Create("identity-hub", "app", action, "1.0", content);
 
+    private static readonly string[] EnvelopeFields =
+        ["id", "source", "tenant", "action", "timestamp", "contentVersion", "content"];
+
+    private const string ValidJson = """
+        {"content":{"userId":"a57d2696-18b4-47ad-af5d-16b35b6a0201"},"contentVersion":"1.0","timestamp":"2026-11-12T10:15:30.123Z",
+         "action":"user-created","tenant":"app","source":"identity-hub","id":"3f2c9a1e-6a0e-4c4f-9f0e-2d8b6f1a0b11"}
+        """;
+
     [Fact]
-    public void EventOmitsExpiryAndMissingExpiryReadsAsNull()
+    public void EnvelopeHasExactlyTheContractFields()
     {
         var value = Envelope(new UserEventContent { UserId = UserId });
-        var json = JsonSerializer.Serialize(value);
-        using var document = JsonDocument.Parse(json);
-        Assert.False(document.RootElement.TryGetProperty("expiresAt", out _));
-        Assert.False(document.RootElement.TryGetProperty("routingKey", out _));
-        Assert.Null(JsonSerializer.Deserialize<BaseEventEnvelope<UserEventContent>>(json)!.ExpiresAt);
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(value));
+        Assert.Equal(EnvelopeFields, document.RootElement.EnumerateObject().Select(p => p.Name));
         Assert.True(Guid.TryParse(value.Id, out _));
-        Assert.EndsWith("Z", value.Timestamp);
+        Assert.Matches(@"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$", value.Timestamp);
         Assert.NotEqual(value.Id, Envelope(new UserEventContent { UserId = UserId }).Id);
     }
 
     [Fact]
-    public void CommandRetainsExplicitNullDespiteIgnoreNullOptions()
+    public void CommandEnvelopeHasNoExpiryEvenWhenContentHasOne()
     {
-        var value = BaseEventEnvelope<object>.CreateCommand("app", "app", "invoice", "1.0", new { }, null);
-        var options = new JsonSerializerOptions { DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull };
-        var json = JsonSerializer.Serialize(value, options);
-        using var document = JsonDocument.Parse(json);
-        Assert.Equal(JsonValueKind.Null, document.RootElement.GetProperty("expiresAt").ValueKind);
-        var read = JsonSerializer.Deserialize<BaseEventEnvelope<object>>(json)!;
-        Assert.Null(read.ExpiresAt);
-        Assert.True(read.IsCommand);
-        Assert.Contains("\"expiresAt\":null", JsonSerializer.Serialize(read));
+        var content = (OtpEmailContent)Commands().Last()[1];
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(Envelope(content, "email-user-2fa-otp")));
+        Assert.Equal(EnvelopeFields, document.RootElement.EnumerateObject().Select(p => p.Name));
+        Assert.Equal("2026-07-01T12:00:00Z", document.RootElement.GetProperty("content").GetProperty("expiresAt").GetString());
     }
 
     [Fact]
-    public void ArbitraryCommandSupportsExpiryAndNormalizesUtc()
+    public void ReadIgnoresFieldOrderAndUnknownFields()
     {
-        var value = BaseEventEnvelope<object>.CreateCommand("app", "app", "custom", "1.0", new { }, Expiry);
-        var json = JsonSerializer.Serialize(value);
-        using var document = JsonDocument.Parse(json);
-        Assert.Equal("2026-07-01T12:00:00Z", document.RootElement.GetProperty("expiresAt").GetString());
-        Assert.Equal(Expiry, JsonSerializer.Deserialize<BaseEventEnvelope<object>>(json)!.ExpiresAt);
+        var withExtra = ValidJson.Replace("\"id\"", "\"expiresAt\":null,\"id\"");
+        var read = JsonSerializer.Deserialize<BaseEventEnvelope<UserEventContent>>(withExtra)!;
+        Assert.Equal("identity-hub.app.user-created", BaseRoutingKey.For(read));
+        Assert.Equal(UserId, read.Content.UserId);
+    }
+
+    [Theory]
+    [InlineData("id")] [InlineData("source")] [InlineData("tenant")] [InlineData("action")]
+    [InlineData("timestamp")] [InlineData("contentVersion")] [InlineData("content")]
+    public void ReadRejectsMissingOrNullEnvelopeField(string field)
+    {
+        var node = System.Text.Json.Nodes.JsonNode.Parse(ValidJson)!.AsObject();
+        node[field] = null;
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<BaseEventEnvelope<UserEventContent>>(node.ToJsonString()));
+        node.Remove(field);
+        Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<BaseEventEnvelope<UserEventContent>>(node.ToJsonString()));
+    }
+
+    [Fact]
+    public void WriteRejectsNullContent()
+    {
+        Assert.Throws<JsonException>(() => JsonSerializer.Serialize(Envelope<object?>(null)));
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(Envelope(new { })));
+        Assert.Equal(JsonValueKind.Object, document.RootElement.GetProperty("content").ValueKind);
     }
 
     // Content fields per action, from "Identity commands" in docs/contracts/event-contract.md.
     private static readonly string[] NotificationFields = ["userId", "email", "fullName", "locale", "timeZone"];
     private static readonly Dictionary<string, string[]> ContractFields = new()
     {
-        ["user-verify"] = [.. NotificationFields, "actionLink", "expiresAt", "validForMinutes"],
-        ["user-2fa-otp"] = [.. NotificationFields, "otpCode", "expiresAt", "validForMinutes"],
-        ["user-password-reset"] = [.. NotificationFields, "actionLink", "expiresAt", "validForMinutes"],
+        ["email-user-verify"] = [.. NotificationFields, "actionLink", "expiresAt", "validForMinutes"],
+        ["email-user-2fa-otp"] = [.. NotificationFields, "otpCode", "expiresAt", "validForMinutes"],
+        ["email-user-password-reset"] = [.. NotificationFields, "actionLink", "expiresAt", "validForMinutes"],
     };
 
     public static IEnumerable<object[]> Commands()
     {
-        yield return new object[] { "user-verify", new VerifyEmailContent { UserId = UserId, Email = "user@example.com", FullName = "Test User", Locale = "et-EE", TimeZone = "Europe/Tallinn", ActionLink = "https://example.com/verify", ExpiresAt = Expiry, ValidForMinutes = 10 } };
-        yield return new object[] { "user-password-reset", new PasswordResetContent { UserId = UserId, Email = "user@example.com", FullName = "Test User", Locale = "en-US", TimeZone = "Europe/Tallinn", ActionLink = "https://example.com/reset", ExpiresAt = Expiry, ValidForMinutes = 10 } };
-        yield return new object[] { "user-2fa-otp", new OtpEmailContent { UserId = UserId, Email = "user@example.com", FullName = "Test User", Locale = "et-EE", TimeZone = "Europe/Tallinn", OtpCode = "123456", ExpiresAt = Expiry, ValidForMinutes = 5 } };
+        yield return new object[] { "email-user-verify", new VerifyEmailContent { UserId = UserId, Email = "user@example.com", FullName = "Test User", Locale = "et-EE", TimeZone = "Europe/Tallinn", ActionLink = "https://example.com/verify", ExpiresAt = Expiry, ValidForMinutes = 10 } };
+        yield return new object[] { "email-user-password-reset", new PasswordResetContent { UserId = UserId, Email = "user@example.com", FullName = "Test User", Locale = "en-US", TimeZone = "Europe/Tallinn", ActionLink = "https://example.com/reset", ExpiresAt = Expiry, ValidForMinutes = 10 } };
+        yield return new object[] { "email-user-2fa-otp", new OtpEmailContent { UserId = UserId, Email = "user@example.com", FullName = "Test User", Locale = "et-EE", TimeZone = "Europe/Tallinn", OtpCode = "123456", ExpiresAt = Expiry, ValidForMinutes = 5 } };
     }
 
     [Theory]
@@ -85,8 +103,17 @@ public class ContractTests
         Assert.Equal(UserId, actual.GetProperty("userId").GetString());
         Assert.Equal("Europe/Tallinn", actual.GetProperty("timeZone").GetString());
         Assert.Equal(JsonValueKind.Number, actual.GetProperty("validForMinutes").ValueKind);
-        Assert.Equal(document.RootElement.GetProperty("expiresAt").GetString(), actual.GetProperty("expiresAt").GetString());
-        Assert.Equal(Expiry, JsonSerializer.Deserialize<BaseEventEnvelope<T>>(json)!.ExpiresAt);
+        Assert.Equal("2026-07-01T12:00:00Z", actual.GetProperty("expiresAt").GetString());
+        Assert.Equal(Expiry, ((IExpiringNotificationContent)JsonSerializer.Deserialize<BaseEventEnvelope<T>>(json)!.Content!).ExpiresAt);
+    }
+
+    [Fact]
+    public void UserEventsCarryTheContractFields()
+    {
+        var content = new UserEventContent { UserId = UserId, Email = "user@example.com", Username = "user", FullName = "Some User", Locale = "et-EE", TimeZone = "Europe/Tallinn" };
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(Envelope(content)));
+        Assert.Equal(new[] { "email", "fullName", "locale", "timeZone", "userId", "username" },
+            document.RootElement.GetProperty("content").EnumerateObject().Select(p => p.Name).Order());
     }
 
     [Fact]
@@ -120,14 +147,19 @@ public class ContractTests
     }
 
     [Fact]
-    public async Task PublisherRejectsInvalidRecipientAndExpiryBeforeConnecting()
+    public async Task PublisherRejectsInvalidRecipientAndNullFieldsBeforeConnecting()
     {
         var publisher = new Base.Message.RabbitMQ.RabbitMqEventPublisher(null!, null!, null!);
         var invalid = new BaseNotificationContent { UserId = UserId, Email = "user@example.com", FullName = "Test User" };
-        await Assert.ThrowsAsync<ArgumentException>(() => publisher.PublishAsync(Envelope(invalid, "invoice")));
-        var valid = (OtpEmailContent)Commands().Last()[1];
-        var mismatch = BaseEventEnvelope<OtpEmailContent>.CreateCommand("identity-hub", "app", "user-2fa-otp", "1.0", valid, null);
-        await Assert.ThrowsAsync<ArgumentException>(() => publisher.PublishAsync(mismatch));
+        await Assert.ThrowsAsync<ArgumentException>(() => publisher.PublishAsync(Envelope(invalid, "email-invoice")));
+        await Assert.ThrowsAsync<ArgumentException>(() => publisher.PublishAsync(Envelope<object?>(null)));
+        var nullVersion = new BaseEventEnvelope<object>
+        {
+            Id = Guid.NewGuid().ToString(), Source = "identity-hub", Tenant = "app", Action = "user-created",
+            Timestamp = BaseEventEnvelope<object>.FormatTimestamp(DateTimeOffset.UtcNow), ContentVersion = null!,
+            Content = new { }
+        };
+        await Assert.ThrowsAsync<ArgumentException>(() => publisher.PublishAsync(nullVersion));
     }
 
     [Theory]

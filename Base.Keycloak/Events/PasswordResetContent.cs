@@ -4,7 +4,7 @@ using System.Text.Json.Serialization;
 namespace Base.Keycloak.Events;
 
 /// <summary>
-/// Represents the <c>content</c> payload of a Keycloak password reset command (<c>user-password-reset</c>).
+/// Represents the <c>content</c> payload of a Keycloak password reset command (<c>email-user-password-reset</c>).
 /// </summary>
 public class PasswordResetContent : BaseNotificationContent, IExpiringNotificationContent
 {

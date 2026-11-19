@@ -2,8 +2,9 @@ namespace Base.Contracts.Message;
 
 /// <summary>
 /// Defines the base event envelope contract. The envelope carries a strongly typed content payload plus the
-/// fixed metadata every message on the platform shares. Events carry the following fields; commands additionally carry expiresAt:
-/// <c>id, source, tenant, action, timestamp, contentVersion, content</c>.
+/// fixed metadata every message on the platform shares. Events and commands carry exactly these fields, none of them
+/// ever null: <c>id, source, tenant, action, timestamp, contentVersion, content</c>. Whether a message is an event or
+/// a command is decided by the exchange it is published on, not by the envelope.
 /// </summary>
 /// <typeparam name="TContent">The content payload type carried by the event envelope.</typeparam>
 public interface IBaseEventEnvelope<TContent>
@@ -21,13 +22,14 @@ public interface IBaseEventEnvelope<TContent>
     public string Source { get; init; }
 
     /// <summary>
-    /// Gets and/or initializes the subject the message concerns: a single segment (the Keycloak realm name).
+    /// Gets and/or initializes the subject the message concerns: a single segment (the Keycloak realm name, or the
+    /// requesting product's slug for ai-hub replies).
     /// </summary>
     public string Tenant { get; init; }
 
     /// <summary>
     /// Gets and/or initializes what happened or what to send: a single hyphenated segment
-    /// (for example <c>user-created</c>, <c>user-2fa-otp</c>).
+    /// (for example <c>user-created</c>, <c>email-user-2fa-otp</c>).
     /// </summary>
     public string Action { get; init; }
 
@@ -37,9 +39,6 @@ public interface IBaseEventEnvelope<TContent>
     /// </summary>
     public string Timestamp { get; init; }
 
-    /// <summary>Gets the optional command expiry. Missing values deserialize as null.</summary>
-    public DateTimeOffset? ExpiresAt { get => null; init { } }
-
     /// <summary>
     /// Gets and/or initializes the content version supplied by the emitter and passed through verbatim. The
     /// package neither validates nor interprets it: the emitter supplies it, the consumer reads it.
@@ -48,7 +47,8 @@ public interface IBaseEventEnvelope<TContent>
 
     /// <summary>
     /// Gets and/or initializes the payload associated with the event. Its shape is defined per
-    /// <see cref="Action"/>.
+    /// <see cref="Action"/> and <see cref="ContentVersion"/>. Never <c>null</c>; an empty object when there is nothing
+    /// to send.
     /// </summary>
     public TContent Content { get; init; }
 }

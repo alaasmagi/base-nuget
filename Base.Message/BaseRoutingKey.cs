@@ -4,7 +4,7 @@ namespace Base.Message;
 
 /// <summary>
 /// Builds the one and only routing-key shape used across the platform: <c>{source}.{tenant}.{action}</c>
-/// (for example <c>identity-hub.my-realm.user-2fa-otp</c>). This is the single place a routing key is
+/// (for example <c>identity-hub.my-realm.email-user-2fa-otp</c>). This is the single place a routing key is
 /// constructed; nothing else in the package composes one.
 /// </summary>
 public static class BaseRoutingKey
