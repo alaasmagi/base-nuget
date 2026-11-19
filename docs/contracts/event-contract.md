@@ -145,7 +145,7 @@ Published by `identity-hub`, consumed by `notification-hub`. All are commands wi
 
 Published by products (`source` = app slug), consumed by `notification-hub`. Content = common notification fields plus the action-specific fields below. Amounts are decimal strings (`"95.75"`), dates are `yyyy-MM-dd`, times are `HH:mm`.
 
-### `invoice` (never expires: `expiresAt: null`)
+### `email-invoice` (never expires: `expiresAt: null`)
 
 | Field | Type |
 |---|---|
