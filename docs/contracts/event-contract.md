@@ -171,3 +171,64 @@ Published by products (`source` = app slug), consumed by `notification-hub`. Con
 2. Content inherits `BaseNotificationContent` (implement `IExpiringNotificationContent` if it expires).
 3. Publish with `CreateCommand(...)`.
 4. Add the action and its content fields to this document.
+
+## AI parsing (ai-hub)
+
+Products send work to `ai-hub` as commands on `ai-hub.commands` and receive the results as events on `ai-hub.events`. The reply's `tenant` is the requesting product's slug, so a product binds its own queue to `ai-hub.events` with `ai-hub.{product}.#`. Content is not a notification: it does not inherit `BaseNotificationContent` and carries no recipient fields.
+
+### `invoice-parse` (command, expires)
+
+Published by `invoice-service` (`invoice-service.invoice-service.invoice-parse` on `ai-hub.commands`). The envelope `expiresAt` equals the expiry of `fileUrl`; ai-hub must not start work after it and replies `invoice-parse-failed` with reason `expired` instead.
+
+| Field | Type | Rules |
+|---|---|---|
+| `documentId` | string (UUID) | Correlation id; returned unchanged in the reply. |
+| `fileUrl` | string (URL) | Signed GET link to the PDF. Secret: never log or persist it. |
+| `fileName` | string | Original file name, display only. |
+| `contentType` | string | `application/pdf`. |
+| `sha256` | string | Lower-case hex SHA-256 of the file, to verify the download. |
+
+### `invoice-parsed` (event)
+
+Published by `ai-hub` (`ai-hub.invoice-service.invoice-parsed` on `ai-hub.events`).
+
+| Field | Type | Rules |
+|---|---|---|
+| `documentId` | string (UUID) | From the command. |
+| `serviceName` | string | Provider or service name as printed, e.g. `Telia`. |
+| `invoiceDate` | date \| null | `yyyy-MM-dd`. |
+| `periodStart`, `periodEnd` | date \| null | `yyyy-MM-dd`. |
+| `currency` | string | ISO 4217, e.g. `EUR`. |
+| `rows[]` | array | One per address charge: `addressText` (string), `amount` (decimal string), optional `invoiceDate`, `periodStart`, `periodEnd` (date \| null) that override the document-level values. |
+
+### `invoice-parse-failed` (event)
+
+Published by `ai-hub` (`ai-hub.invoice-service.invoice-parse-failed` on `ai-hub.events`).
+
+| Field | Type | Rules |
+|---|---|---|
+| `documentId` | string (UUID) | From the command. |
+| `reason` | string | One of `download-failed`, `not-an-invoice`, `unreadable`, `model-error`, `expired`. |
+| `message` | string | Short explanation for the user. Never the document's content. |
+
+```json
+{
+  "id": "6a0e…",
+  "source": "ai-hub",
+  "tenant": "invoice-service",
+  "action": "invoice-parsed",
+  "timestamp": "2026-11-18T10:15:30.123Z",
+  "contentVersion": "1.0",
+  "content": {
+    "documentId": "c4f1…",
+    "serviceName": "Telia",
+    "invoiceDate": "2026-11-05",
+    "periodStart": "2026-10-01",
+    "periodEnd": "2026-10-31",
+    "currency": "EUR",
+    "rows": [
+      { "addressText": "Tallinn - Tehnika", "amount": "40.00" }
+    ]
+  }
+}
+```
